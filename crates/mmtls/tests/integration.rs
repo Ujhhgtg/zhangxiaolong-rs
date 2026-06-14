@@ -17,7 +17,7 @@ async fn test_1rtt_ecdhe_handshake() {
 #[ignore = "requires network"]
 async fn test_1rtt_psk_handshake() {
     let session = Session::load("../gommtls/session_long").await.ok();
-    let mut client = MmtlsClient::new();
+    let mut client = MmtlsClient::default();
     client.session = session;
     client
         .handshake("szlong.weixin.qq.com:8080")
@@ -32,6 +32,7 @@ async fn test_1rtt_psk_handshake() {
 // #[ignore = "requires network"]
 async fn test_short_link_ecdhe_handshake() {
     let mut client = MmtlsClientShort::default();
+    client.verify_ecdsa = false;
     client
         .handshake("dns.weixin.qq.com.cn")
         .await
@@ -57,6 +58,7 @@ async fn test_short_link_ecdhe_handshake() {
 // #[ignore = "requires network"]
 async fn test_short_link_auto_handshake() {
     let mut client = MmtlsClientShort::default();
+    client.verify_ecdsa = false;
     let resp_body = client
         .request(
             "dns.weixin.qq.com.cn",

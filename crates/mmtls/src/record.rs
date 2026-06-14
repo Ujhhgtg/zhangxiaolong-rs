@@ -1,6 +1,6 @@
 use crate::util::xor_nonce;
 use crate::{Result, TrafficKeyPair};
-use aes_gcm::aead::Aead;
+use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes128Gcm, KeyInit, Nonce};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -15,7 +15,8 @@ impl DataRecord {
         let length = self.data.len() + 16;
         let mut buf = Vec::with_capacity(length);
         buf.extend_from_slice(&(length as u32).to_be_bytes());
-        buf.extend_from_slice(&[0u8; 4]); // flags
+        buf.extend_from_slice(&[0x00, 0x10]); // flags
+        buf.extend_from_slice(&[0x00, 0x01]); // unk
         buf.extend_from_slice(&self.data_type.to_be_bytes());
         buf.extend_from_slice(&self.cmd_id.to_be_bytes());
         buf.extend_from_slice(&self.data);
@@ -42,53 +43,64 @@ impl MmtlsRecord {
     }
 
     pub fn encrypt(&mut self, keys: &TrafficKeyPair, client_seq_num: u32) -> Result<()> {
-        let mut nonce_bytes = keys.client_nonce.clone();
-        xor_nonce(&mut nonce_bytes, client_seq_num);
+        let mut nonce = keys.client_nonce.clone();
+        xor_nonce(&mut nonce, client_seq_num);
 
         let cipher = Aes128Gcm::new_from_slice(&keys.client_key)
             .map_err(|_| crate::MmtlsError::Crypto("invalid key for encrypt".into()))?;
-        let nonce = Nonce::try_from(&nonce_bytes)
+        let nonce = Nonce::try_from(&nonce)
             .map_err(|_| crate::MmtlsError::Crypto("invalid nonce bytes".into()))?;
 
+        // AAD: 8B seq(BE) + 1B record_type + 2B version + 2B (len+16)
+        let mut aad = [0u8; 13];
+        aad[..8].copy_from_slice(&(client_seq_num as u64).to_be_bytes());
+        aad[8] = self.record_type;
+        aad[9..11].copy_from_slice(&self.version.to_be_bytes());
+        aad[11..13].copy_from_slice(&((self.data.len() as u16) + 16).to_be_bytes());
+
         let ciphertext = cipher
-            .encrypt(&nonce, self.data.as_ref())
+            .encrypt(
+                &nonce,
+                Payload {
+                    msg: &self.data,
+                    aad: &aad,
+                },
+            )
             .map_err(|_| crate::MmtlsError::Crypto("encryption failed".into()))?;
 
-        // Prepend nonce to ciphertext (matching Go: nonce || ciphertext+tag)
-        let mut out = nonce_bytes;
-        out.extend_from_slice(&ciphertext);
-        self.data = out;
+        self.data = ciphertext;
+        self.length = self.data.len() as u16;
         Ok(())
     }
 
     pub fn decrypt(&mut self, keys: &TrafficKeyPair, server_seq_num: u32) -> Result<()> {
-        if self.data.len() < 28 {
-            return Err(crate::MmtlsError::Parse(
-                "data too short for decrypt".into(),
-            ));
-        }
-        let recv_nonce = self.data[..12].to_vec();
-        let ciphertext = &self.data[12..];
-
-        let mut nonce_bytes = keys.server_nonce.clone();
-        xor_nonce(&mut nonce_bytes, server_seq_num);
-
-        if recv_nonce != nonce_bytes {
-            return Err(crate::MmtlsError::Crypto(
-                "nonce mismatch in decrypt".into(),
-            ));
-        }
+        let mut nonce = keys.server_nonce.clone();
+        xor_nonce(&mut nonce, server_seq_num);
 
         let cipher = Aes128Gcm::new_from_slice(&keys.server_key)
             .map_err(|_| crate::MmtlsError::Crypto("invalid key for decrypt".into()))?;
-        let nonce = Nonce::try_from(&nonce_bytes)
+        let nonce = Nonce::try_from(&nonce)
             .map_err(|_| crate::MmtlsError::Crypto("invalid nonce bytes".into()))?;
 
+        // AAD: 8B seq(BE) + 1B record_type + 2B version + 2B len
+        let mut aad = [0u8; 13];
+        aad[..8].copy_from_slice(&(server_seq_num as u64).to_be_bytes());
+        aad[8] = self.record_type;
+        aad[9..11].copy_from_slice(&self.version.to_be_bytes());
+        aad[11..13].copy_from_slice(&(self.data.len() as u16).to_be_bytes());
+
         let plaintext = cipher
-            .decrypt(&nonce, ciphertext)
+            .decrypt(
+                &nonce,
+                Payload {
+                    msg: &self.data,
+                    aad: &aad,
+                },
+            )
             .map_err(|_| crate::MmtlsError::Crypto("decryption failed".into()))?;
 
         self.data = plaintext;
+        self.length = self.data.len() as u16;
         Ok(())
     }
 }

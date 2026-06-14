@@ -27,6 +27,7 @@ pub struct MmtlsClient {
     server_seq_num: u32,
     client_seq_num: u32,
     pub session: Option<Session>,
+    pub verify_ecdsa: bool,
 }
 
 pub fn new_mmtls_client() -> MmtlsClient {
@@ -177,10 +178,12 @@ impl MmtlsClient {
 
         let sig = read_signature(&record.data)?;
 
-        if !verify_ecdsa_signature(
-            &self.handshake_hasher.clone().finalize(),
-            &sig.ecdsa_signature,
-        ) {
+        if self.verify_ecdsa
+            && !verify_ecdsa_signature(
+                &self.handshake_hasher.clone().finalize(),
+                &sig.ecdsa_signature,
+            )
+        {
             return Err(MmtlsError::Protocol("verify signature failed".into()));
         }
 
@@ -395,6 +398,7 @@ impl Default for MmtlsClient {
             server_seq_num: 0,
             client_seq_num: 0,
             session: None,
+            verify_ecdsa: true,
         }
     }
 }

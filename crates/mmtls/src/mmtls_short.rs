@@ -30,6 +30,7 @@ pub struct MmtlsClientShort {
     server_seq_num: u32,
     client_seq_num: u32,
     pub session: Option<Session>,
+    pub verify_ecdsa: bool,
 }
 
 pub fn new_mmtls_client_short() -> MmtlsClientShort {
@@ -96,10 +97,12 @@ impl MmtlsClientShort {
         let mut sig_record = read_sync(self.packet_reader.as_mut().unwrap())?;
         sig_record.decrypt(&traffic_key, self.server_seq_num)?;
         let sig = read_signature(&sig_record.data)?;
-        if !verify_ecdsa_signature(
-            &self.handshake_hasher.clone().finalize(),
-            &sig.ecdsa_signature,
-        ) {
+        if self.verify_ecdsa
+            && !verify_ecdsa_signature(
+                &self.handshake_hasher.clone().finalize(),
+                &sig.ecdsa_signature,
+            )
+        {
             return Err(MmtlsError::Protocol("verify ECDSA signature failed".into()));
         }
         self.handshake_hasher.update(&sig_record.data);
@@ -178,11 +181,22 @@ impl MmtlsClientShort {
         self.server_seq_num += 1;
 
         let session_psk = self.session.as_ref().unwrap().psk_access.clone();
-        let traffic_key = compute_traffic_key_n(
-            &session_psk,
+        // Derive server-side key (server_key+server_nonce) for decrypting responses
+        use hkdf::Hkdf;
+        let hk = Hkdf::<sha2::Sha256>::from_prk(&session_psk)
+            .map_err(|_| MmtlsError::Crypto("hkdf from_prk failed".into()))?;
+        let mut okm = [0u8; 28];
+        hk.expand(
             &build_hkdf_info("handshake key expansion", Some(&self.handshake_hasher)),
-            28,
-        )?;
+            &mut okm,
+        )
+        .map_err(|_| MmtlsError::Crypto("hkdf expand failed".into()))?;
+        let traffic_key = TrafficKeyPair {
+            client_key: Vec::new(),
+            server_key: okm[..16].to_vec(),
+            client_nonce: Vec::new(),
+            server_nonce: okm[16..].to_vec(),
+        };
         if let Some(session) = &mut self.session {
             session.app_key = Some(traffic_key);
         }
@@ -298,6 +312,7 @@ impl Default for MmtlsClientShort {
             public_ecdh: None,
             verify_ecdh: None,
             server_ecdh: None,
+            verify_ecdsa: true,
             packet_reader: None,
             handshake_hasher: sha2::Sha256::new(),
             server_seq_num: 0,

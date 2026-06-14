@@ -41,8 +41,8 @@ pub fn compute_traffic_key_n(share_key: &[u8], info: &[u8], n: usize) -> Result<
         pair.client_nonce = okm[32..44].to_vec();
         pair.server_nonce = okm[44..56].to_vec();
     } else if n == 28 {
-        pair.server_key = okm[0..16].to_vec();
-        pair.server_nonce = okm[16..28].to_vec();
+        pair.client_key = okm[0..16].to_vec();
+        pair.client_nonce = okm[16..28].to_vec();
     }
 
     Ok(pair)
