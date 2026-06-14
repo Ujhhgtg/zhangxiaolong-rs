@@ -28,19 +28,19 @@ mmtls-cli [--link-mode shortlink] <host> <path> [options]
 features:
 
 - raw request bytes from file (`--req-file`), or inline/from-file protobuf json (`--req-proto-json`, `--req-proto-json-file`) converted to wire format
-- `--parse-http` to decode the http response and body (with deflate/gzip decompression and syntax highlighting)
+- `--output http` to decode the http response and body (with deflate/gzip decompression and syntax highlighting)
 - `--pretty-printing` toggle for syntax highlighting (default on, respects `NO_COLOR` and piped output)
 
 examples:
 
 ```bash
 # send a raw request from file, print hex response
-mmtls-cli short.weixin.qq.com /cgi-bin/micromsg-bin/newgetdns --req-file req.bin
+mmtls-cli dns.weixin.qq.com /cgi-bin/micromsg-bin/newgetdns --req-file req.bin
 
 # send protobuf json as request body, parse http response
-mmtls-cli short.weixin.qq.com /cgi-bin/micromsg-bin/newgetdns \
+mmtls-cli dns.weixin.qq.com /cgi-bin/micromsg-bin/newgetdns \
   --req-proto-json '{"1": "hello"}' \
-  --parse-http
+  --output http
 ```
 
 ### `zhangxiaolong` (server)

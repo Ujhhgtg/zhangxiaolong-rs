@@ -36,9 +36,11 @@ pub struct Cli {
     #[arg(long)]
     pub req_proto_json: Option<String>,
 
-    /// Parse the HTTP response and print it in human-readable format
-    #[arg(long)]
-    pub parse_http: bool,
+    /// Output mode: "hex-encode" = hex dump, "raw" = raw bytes,
+    /// "http" = HTTP with highlighting, "proto" = decode body as protobuf JSON,
+    /// "auto" = detect from content
+    #[arg(long, default_value = "raw")]
+    pub output: OutputMode,
 
     /// Enable syntax highlighting for human-readable output.
     /// Disable with --pretty-printing false, NO_COLOR env var, or piped output.
@@ -50,4 +52,13 @@ pub struct Cli {
 pub enum LinkMode {
     Shortlink,
     Longlink,
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum OutputMode {
+    HexEncode,
+    Raw,
+    Http,
+    Proto,
+    Auto,
 }

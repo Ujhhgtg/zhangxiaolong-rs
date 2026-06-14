@@ -26,11 +26,7 @@ async fn main() -> ExitCode {
 
             match client.request(&cli.host, &cli.path, &req_bytes).await {
                 Ok(resp) => {
-                    if cli.parse_http {
-                        response::print(&resp, cli.pretty_printing);
-                    } else {
-                        println!("{}", hex::encode(&resp));
-                    }
+                    response::print(&resp, &cli.output, cli.pretty_printing);
                     ExitCode::SUCCESS
                 }
                 Err(e) => {
