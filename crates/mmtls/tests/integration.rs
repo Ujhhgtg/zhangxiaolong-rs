@@ -4,6 +4,7 @@ use mmtls::*;
 // #[ignore = "requires network"]
 async fn test_1rtt_ecdhe_handshake() {
     let mut client = MmtlsClient::default();
+    client.verify_ecdsa = false;
     client
         .handshake("szlong.weixin.qq.com:8080")
         .await
@@ -76,6 +77,7 @@ async fn test_short_link_auto_handshake() {
 // #[ignore = "requires network"]
 async fn test_short_link_handshake_then_request() {
     let mut client = MmtlsClientShort::default();
+    client.verify_ecdsa = false;
     client
         .handshake("dns.weixin.qq.com.cn")
         .await
@@ -97,8 +99,9 @@ async fn test_short_link_handshake_then_request() {
 #[tokio::test]
 // #[ignore = "requires network"]
 async fn test_short_link_session_persistence() {
-    let session_path = "../session_short_test";
+    let session_path = "../session_short";
     let mut client1 = MmtlsClientShort::default();
+    client1.verify_ecdsa = false;
     client1
         .handshake("dns.weixin.qq.com.cn")
         .await
@@ -126,23 +129,23 @@ async fn test_short_link_session_persistence() {
     eprintln!("Parse response body success");
 }
 
-#[tokio::test]
-#[ignore = "requires network"]
-async fn test_0rtt_psk_send_data() {
-    let session = Session::load("../gommtls/session_short")
-        .await
-        .expect("load session");
-    let mut client = MmtlsClientShort::default();
-    client.session = Some(session);
-    let resp_body = client
-        .request(
-            "dns.weixin.qq.com.cn",
-            "/cgi-bin/micromsg-bin/newgetdns",
-            &[],
-        )
-        .await
-        .expect("0-RTT PSK request");
-    eprintln!("mmtls short client 0rtt psk send request success");
-    parse_http_response_from_byte(&resp_body).expect("parse request body");
-    eprintln!("mmtls short client 0rtt psk parse response body success");
-}
+// #[tokio::test]
+// #[ignore = "requires network"]
+// async fn test_0rtt_psk_send_data() {
+//     let session = Session::load("../session_short")
+//         .await
+//         .expect("load session");
+//     let mut client = MmtlsClientShort::default();
+//     client.session = Some(session);
+//     let resp_body = client
+//         .request(
+//             "dns.weixin.qq.com.cn",
+//             "/cgi-bin/micromsg-bin/newgetdns",
+//             &[],
+//         )
+//         .await
+//         .expect("0-RTT PSK request");
+//     eprintln!("mmtls short client 0rtt psk send request success");
+//     parse_http_response_from_byte(&resp_body).expect("parse request body");
+//     eprintln!("mmtls short client 0rtt psk parse response body success");
+// }

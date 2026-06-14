@@ -51,9 +51,10 @@ impl MmtlsRecord {
         let nonce = Nonce::try_from(&nonce)
             .map_err(|_| crate::MmtlsError::Crypto("invalid nonce bytes".into()))?;
 
-        // AAD: 8B seq(BE) + 1B record_type + 2B version + 2B (len+16)
+        // AAD: 4B zeros + 4B seq(BE) + 1B record_type + 2B version + 2B (len+16)
         let mut aad = [0u8; 13];
-        aad[..8].copy_from_slice(&(client_seq_num as u64).to_be_bytes());
+        aad[..4].copy_from_slice(&[0u8; 4]);
+        aad[4..8].copy_from_slice(&client_seq_num.to_be_bytes());
         aad[8] = self.record_type;
         aad[9..11].copy_from_slice(&self.version.to_be_bytes());
         aad[11..13].copy_from_slice(&((self.data.len() as u16) + 16).to_be_bytes());
@@ -82,9 +83,10 @@ impl MmtlsRecord {
         let nonce = Nonce::try_from(&nonce)
             .map_err(|_| crate::MmtlsError::Crypto("invalid nonce bytes".into()))?;
 
-        // AAD: 8B seq(BE) + 1B record_type + 2B version + 2B len
+        // AAD: 4B zeros + 4B seq(BE) + 1B record_type + 2B version + 2B len
         let mut aad = [0u8; 13];
-        aad[..8].copy_from_slice(&(server_seq_num as u64).to_be_bytes());
+        aad[..4].copy_from_slice(&[0u8; 4]);
+        aad[4..8].copy_from_slice(&server_seq_num.to_be_bytes());
         aad[8] = self.record_type;
         aad[9..11].copy_from_slice(&self.version.to_be_bytes());
         aad[11..13].copy_from_slice(&(self.data.len() as u16).to_be_bytes());
