@@ -2,7 +2,7 @@ use std::io::IsTerminal;
 use std::sync::OnceLock;
 
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{Theme, ThemeSet, Style};
+use syntect::highlighting::{Style, Theme, ThemeSet};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
 
@@ -70,10 +70,5 @@ fn push_colored(out: &mut String, style: Style, text: &str) {
         return;
     }
     use std::fmt::Write;
-    write!(
-        out,
-        "\x1b[38;2;{};{};{}m{text}\x1b[0m",
-        fg.r, fg.g, fg.b
-    )
-    .ok();
+    write!(out, "\x1b[38;2;{};{};{}m{text}\x1b[0m", fg.r, fg.g, fg.b).ok();
 }

@@ -42,8 +42,7 @@ pub async fn resolve_bytes(cli: &Cli) -> Result<Vec<u8>, String> {
 ///
 /// Expected shape: `{"1": "value", "2": 1234, "3": ["repeated", "fields"]}`
 fn json_to_protobuf(json_str: &str) -> Result<Vec<u8>, String> {
-    let value: Value =
-        serde_json::from_str(json_str).map_err(|e| format!("invalid JSON: {e}"))?;
+    let value: Value = serde_json::from_str(json_str).map_err(|e| format!("invalid JSON: {e}"))?;
 
     let mut buf = Vec::new();
     encode_value(0, &value, &mut buf)?;
