@@ -4,3 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+mmtls = { path = "../mmtls" }
+tokio = { version = "1", features = [
+    "net",
+    "io-util",
+    "sync",
+    "macros",
+    "rt",
+    "rt-multi-thread",
+] }
+log = "0.4"
+env_logger = "0.11"

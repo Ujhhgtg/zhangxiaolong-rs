@@ -431,18 +431,13 @@ impl MmtlsServer {
         // Parse request: gen_data_part format
         // [4B total length] [2B path len] [path] [2B host len] [host] [4B req len] [req]
         let (path, host, req_body) = parse_data_part(&request_data)?;
+        let _ = (&path, &host); // debug path logged inside parse_data_part
 
         // Read and decrypt abort record (0x15)
         let mut abort_record = read_sync(reader)?;
         abort_record.decrypt_as_server(&early_data_key, client_seq)?;
         // client_seq advanced but will be reset for response
 
-        log::info!(
-            "PSK 0-RTT request: {} {} ({} bytes)",
-            host,
-            path,
-            req_body.len()
-        );
 
         // Build response — simple HTTP response so client can parse_http_response_from_byte it
         let resp_payload = format!(
@@ -617,6 +612,8 @@ fn parse_data_part(data: &[u8]) -> Result<(String, String, Vec<u8>)> {
         .map_err(|e| MmtlsError::Parse(format!("invalid path utf8: {e}")))?;
     let host = String::from_utf8(read_u16_len_data(&mut r)?)
         .map_err(|e| MmtlsError::Parse(format!("invalid host utf8: {e}")))?;
+
+    log::info!("<-- {} {} ({} bytes)", host, path, r.get_ref().len() - r.position() as usize);
 
     // req body
     let mut req_len_buf = [0u8; 4];
