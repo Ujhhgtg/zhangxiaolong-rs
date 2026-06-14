@@ -1,7 +1,6 @@
 use mmtls::*;
 
 #[tokio::test]
-// #[ignore = "requires network"]
 async fn test_1rtt_ecdhe_handshake() {
     let mut client = MmtlsClient::default();
     client.verify_ecdsa = false;
@@ -14,23 +13,21 @@ async fn test_1rtt_ecdhe_handshake() {
     eprintln!("1-RTT ECDHE send noop success");
 }
 
-#[tokio::test]
-#[ignore = "requires network"]
-async fn test_1rtt_psk_handshake() {
-    let session = Session::load("../gommtls/session_long").await.ok();
-    let mut client = MmtlsClient::default();
-    client.session = session;
-    client
-        .handshake("szlong.weixin.qq.com:8080")
-        .await
-        .expect("1-RTT PSK handshake");
-    eprintln!("1-RTT PSK handshake success");
-    client.noop().await.expect("send noop");
-    eprintln!("1-RTT PSK send noop success");
-}
+// #[tokio::test]
+// async fn test_1rtt_psk_handshake() {
+//     let session = Session::load("../gommtls/session_long").await.ok();
+//     let mut client = MmtlsClient::default();
+//     client.session = session;
+//     client
+//         .handshake("szlong.weixin.qq.com:8080")
+//         .await
+//         .expect("1-RTT PSK handshake");
+//     eprintln!("1-RTT PSK handshake success");
+//     client.noop().await.expect("send noop");
+//     eprintln!("1-RTT PSK send noop success");
+// }
 
 #[tokio::test]
-// #[ignore = "requires network"]
 async fn test_short_link_ecdhe_handshake() {
     let mut client = MmtlsClientShort::default();
     client.verify_ecdsa = false;
@@ -56,7 +53,6 @@ async fn test_short_link_ecdhe_handshake() {
 }
 
 #[tokio::test]
-// #[ignore = "requires network"]
 async fn test_short_link_auto_handshake() {
     let mut client = MmtlsClientShort::default();
     client.verify_ecdsa = false;
@@ -74,7 +70,6 @@ async fn test_short_link_auto_handshake() {
 }
 
 #[tokio::test]
-// #[ignore = "requires network"]
 async fn test_short_link_handshake_then_request() {
     let mut client = MmtlsClientShort::default();
     client.verify_ecdsa = false;
@@ -97,7 +92,6 @@ async fn test_short_link_handshake_then_request() {
 }
 
 #[tokio::test]
-// #[ignore = "requires network"]
 async fn test_short_link_session_persistence() {
     let session_path = "../session_short";
     let mut client1 = MmtlsClientShort::default();
@@ -129,23 +123,22 @@ async fn test_short_link_session_persistence() {
     eprintln!("Parse response body success");
 }
 
-// #[tokio::test]
-// #[ignore = "requires network"]
-// async fn test_0rtt_psk_send_data() {
-//     let session = Session::load("../session_short")
-//         .await
-//         .expect("load session");
-//     let mut client = MmtlsClientShort::default();
-//     client.session = Some(session);
-//     let resp_body = client
-//         .request(
-//             "dns.weixin.qq.com.cn",
-//             "/cgi-bin/micromsg-bin/newgetdns",
-//             &[],
-//         )
-//         .await
-//         .expect("0-RTT PSK request");
-//     eprintln!("mmtls short client 0rtt psk send request success");
-//     parse_http_response_from_byte(&resp_body).expect("parse request body");
-//     eprintln!("mmtls short client 0rtt psk parse response body success");
-// }
+#[tokio::test]
+async fn test_0rtt_psk_send_data() {
+    let session = Session::load("../session_short")
+        .await
+        .expect("load session");
+    let mut client = MmtlsClientShort::default();
+    client.session = Some(session);
+    let resp_body = client
+        .request(
+            "dns.weixin.qq.com.cn",
+            "/cgi-bin/micromsg-bin/newgetdns",
+            &[],
+        )
+        .await
+        .expect("0-RTT PSK request");
+    eprintln!("mmtls short client 0rtt psk send request success");
+    parse_http_response_from_byte(&resp_body).expect("parse request body");
+    eprintln!("mmtls short client 0rtt psk parse response body success");
+}

@@ -6,6 +6,20 @@ pub struct Signature {
     pub ecdsa_signature: Vec<u8>,
 }
 
+impl Signature {
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(7 + self.ecdsa_signature.len());
+        use std::io::Write;
+        let total_len = (self.ecdsa_signature.len() + 3) as u32; // type(1) + len(2) + sig
+        buf.write_all(&total_len.to_be_bytes()).unwrap();
+        buf.write_all(&[self.sig_type]).unwrap();
+        buf.write_all(&(self.ecdsa_signature.len() as u16).to_be_bytes())
+            .unwrap();
+        buf.write_all(&self.ecdsa_signature).unwrap();
+        buf
+    }
+}
+
 pub fn read_signature(buf: &[u8]) -> Result<Signature> {
     let mut r = Cursor::new(buf);
     use std::io::Read;

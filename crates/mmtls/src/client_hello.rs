@@ -2,9 +2,10 @@ use crate::consts::{PROTOCOL_VERSION, TLS_PSK_WITH_AES_128_GCM_SHA256};
 use crate::session_ticket::SessionTicket;
 use p256::PublicKey;
 use std::collections::HashMap;
+use std::io::Cursor;
 
 // TLS cipher suite constants (from Go's crypto/tls)
-const TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: u16 = 0xC02B;
+pub const TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: u16 = 0xC02B;
 
 pub struct ClientHello {
     pub protocol_version: u16,
@@ -200,4 +201,131 @@ impl ClientHello {
 
         buf
     }
+}
+
+pub fn read_client_hello(buf: &[u8]) -> crate::Result<ClientHello> {
+    let mut r = Cursor::new(buf);
+    use std::io::Read;
+
+    let mut len_buf = [0u8; 4];
+    r.read_exact(&mut len_buf)?;
+    let _total_len = u32::from_be_bytes(len_buf);
+
+    // flag
+    let mut flag_buf = [0u8; 1];
+    r.read_exact(&mut flag_buf)?;
+
+    // protocol version (LE)
+    let mut ver_buf = [0u8; 2];
+    r.read_exact(&mut ver_buf)?;
+    let protocol_version = u16::from_le_bytes(ver_buf);
+
+    // cipher suites
+    let mut cs_count_buf = [0u8; 1];
+    r.read_exact(&mut cs_count_buf)?;
+    let cs_count = cs_count_buf[0];
+    let mut cipher_suites = Vec::with_capacity(cs_count as usize);
+    for _ in 0..cs_count {
+        let mut cs_buf = [0u8; 2];
+        r.read_exact(&mut cs_buf)?;
+        cipher_suites.push(u16::from_be_bytes(cs_buf));
+    }
+
+    // random (32B)
+    let mut random_buf = [0u8; 32];
+    r.read_exact(&mut random_buf)?;
+    let random = random_buf.to_vec();
+
+    // timestamp (4B BE)
+    let mut ts_buf = [0u8; 4];
+    r.read_exact(&mut ts_buf)?;
+    let timestamp = u32::from_be_bytes(ts_buf);
+
+    // extensions
+    let mut ext_len_buf = [0u8; 4];
+    r.read_exact(&mut ext_len_buf)?;
+    let _ext_total_len = u32::from_be_bytes(ext_len_buf);
+
+    let mut ext_count_buf = [0u8; 1];
+    r.read_exact(&mut ext_count_buf)?;
+    let ext_count = ext_count_buf[0];
+
+    let mut extensions: HashMap<u16, Vec<Vec<u8>>> = HashMap::new();
+
+    for _ in 0..ext_count {
+        let mut item_len_buf = [0u8; 4];
+        r.read_exact(&mut item_len_buf)?;
+        let ext_item_len = u32::from_be_bytes(item_len_buf) as usize;
+        let ext_start = r.position() as usize;
+
+        let mut ext_type_buf = [0u8; 2];
+        r.read_exact(&mut ext_type_buf)?;
+        let ext_type = u16::from_be_bytes(ext_type_buf);
+
+        match ext_type {
+            0x000F => {
+                // PSK extension
+                let mut tc_buf = [0u8; 1];
+                r.read_exact(&mut tc_buf)?;
+                let tc = tc_buf[0];
+                let mut tickets = Vec::with_capacity(tc as usize);
+                for _ in 0..tc {
+                    let mut tl_buf = [0u8; 4];
+                    r.read_exact(&mut tl_buf)?;
+                    let tl = u32::from_be_bytes(tl_buf) as usize;
+                    let mut td = vec![0u8; tl];
+                    r.read_exact(&mut td)?;
+                    tickets.push(td);
+                }
+                extensions.insert(TLS_PSK_WITH_AES_128_GCM_SHA256, tickets);
+            }
+            0x0010 => {
+                // ECDHE extension
+                let mut kc_buf = [0u8; 1];
+                r.read_exact(&mut kc_buf)?;
+                let kc = kc_buf[0];
+                let mut keys = Vec::with_capacity(kc as usize);
+                for _ in 0..kc {
+                    // key entry length (4B)
+                    let mut kel_buf = [0u8; 4];
+                    r.read_exact(&mut kel_buf)?;
+                    // key flag (4B)
+                    let mut kf_buf = [0u8; 4];
+                    r.read_exact(&mut kf_buf)?;
+                    // key data length (2B)
+                    let mut kdl_buf = [0u8; 2];
+                    r.read_exact(&mut kdl_buf)?;
+                    let kdl = u16::from_be_bytes(kdl_buf) as usize;
+                    let mut kd = vec![0u8; kdl];
+                    r.read_exact(&mut kd)?;
+                    keys.push(kd);
+                }
+                extensions.insert(TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, keys);
+                // consume trailing magic (13 bytes)
+                let consumed = r.position() as usize - ext_start;
+                let remaining = ext_item_len.saturating_sub(2).saturating_sub(consumed);
+                if remaining > 0 {
+                    let mut _magic = vec![0u8; remaining];
+                    r.read_exact(&mut _magic)?;
+                }
+            }
+            _ => {
+                // unknown extension, skip remaining bytes
+                let consumed = r.position() as usize - ext_start;
+                let remaining = ext_item_len.saturating_sub(2).saturating_sub(consumed);
+                if remaining > 0 {
+                    let mut _skip = vec![0u8; remaining];
+                    r.read_exact(&mut _skip)?;
+                }
+            }
+        }
+    }
+
+    Ok(ClientHello {
+        protocol_version,
+        cipher_suites,
+        random,
+        timestamp,
+        extensions,
+    })
 }

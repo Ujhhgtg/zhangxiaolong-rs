@@ -48,6 +48,14 @@ pub fn compute_traffic_key_n(share_key: &[u8], info: &[u8], n: usize) -> Result<
     Ok(pair)
 }
 
+pub fn sign_ecdsa(handshake_hash: &[u8], signing_key: &SecretKey) -> Vec<u8> {
+    use p256::ecdsa::signature::Signer;
+    let data_hash = sha2::Sha256::digest(handshake_hash);
+    let sk = p256::ecdsa::SigningKey::from(signing_key);
+    let sig: p256::ecdsa::Signature = sk.sign(&data_hash);
+    sig.to_der().to_bytes().to_vec()
+}
+
 pub fn verify_ecdsa_signature(handshake_hash: &[u8], data: &[u8]) -> bool {
     use p256::ecdsa::{Signature, VerifyingKey};
 
@@ -60,6 +68,16 @@ pub fn verify_ecdsa_signature(handshake_hash: &[u8], data: &[u8]) -> bool {
 
     let vk = VerifyingKey::from(*server_ecdh());
     vk.verify(&data_hash, &sig).is_ok()
+}
+
+pub fn hkdf_expand(com_key: &[u8], info: &str, hasher: Option<&sha2::Sha256>) -> Result<Vec<u8>> {
+    use hkdf::Hkdf;
+    let hk = Hkdf::<sha2::Sha256>::from_prk(com_key)
+        .map_err(|_| MmtlsError::Crypto("hkdf from_prk failed".into()))?;
+    let mut okm = [0u8; 32];
+    hk.expand(&build_hkdf_info(info, hasher), &mut okm)
+        .map_err(|_| MmtlsError::Crypto("hkdf expand failed".into()))?;
+    Ok(okm.to_vec())
 }
 
 pub fn build_hkdf_info(prefix: &str, handshake_hasher: Option<&sha2::Sha256>) -> Vec<u8> {

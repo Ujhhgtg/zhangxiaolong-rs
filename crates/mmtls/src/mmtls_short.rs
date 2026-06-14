@@ -64,7 +64,11 @@ impl MmtlsClientShort {
 
         let header = build_request_header(host, tls_payload.len())?;
         let http_packet = [header, tls_payload].concat();
-        let addr = format!("{host}:80");
+        let addr = if host.contains(':') {
+            host.to_string()
+        } else {
+            format!("{host}:80")
+        };
         let mut conn = TcpStream::connect(&addr).await?;
         conn.write_all(&http_packet).await?;
 
@@ -163,7 +167,11 @@ impl MmtlsClientShort {
         }
 
         log::info!("0-RTT PSK request");
-        let addr = format!("{host}:80");
+        let addr = if host.contains(':') {
+            host.to_string()
+        } else {
+            format!("{host}:80")
+        };
         let mut conn = TcpStream::connect(&addr).await?;
         self.handshake_hasher = sha2::Sha256::new();
         self.client_seq_num = 0;

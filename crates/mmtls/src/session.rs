@@ -1,6 +1,6 @@
-use crate::{Result, TrafficKeyPair};
 use crate::session_ticket::{NewSessionTicket, read_new_session_ticket};
 use crate::util::{read_u16_len_data, write_u16_len_data};
+use crate::{Result, TrafficKeyPair};
 use std::io::Cursor;
 
 pub struct Session {

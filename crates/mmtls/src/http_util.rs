@@ -17,14 +17,16 @@ pub fn parse_http_response_from_byte(data: &[u8]) -> Result<()> {
                 resp.reason.unwrap_or("")
             );
             for h in resp.headers.iter() {
-                log::info!("  {}: {:?}", h.name, std::str::from_utf8(h.value).unwrap_or("?"));
+                log::info!(
+                    "  {}: {:?}",
+                    h.name,
+                    std::str::from_utf8(h.value).unwrap_or("?")
+                );
             }
 
             // Body is after headers
             Ok(())
         }
-        httparse::Status::Partial => Err(MmtlsError::Parse(
-            "incomplete HTTP response".into(),
-        )),
+        httparse::Status::Partial => Err(MmtlsError::Parse("incomplete HTTP response".into())),
     }
 }

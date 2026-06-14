@@ -42,68 +42,69 @@ impl MmtlsRecord {
         buf
     }
 
-    pub fn encrypt(&mut self, keys: &TrafficKeyPair, client_seq_num: u32) -> Result<()> {
-        let mut nonce = keys.client_nonce.clone();
-        xor_nonce(&mut nonce, client_seq_num);
+    fn crypt(&mut self, key: &[u8], nonce: &[u8], seq_num: u32, encrypt: bool) -> Result<()> {
+        let mut nonce = nonce.to_vec();
+        xor_nonce(&mut nonce, seq_num);
 
-        let cipher = Aes128Gcm::new_from_slice(&keys.client_key)
-            .map_err(|_| crate::MmtlsError::Crypto("invalid key for encrypt".into()))?;
+        let cipher = Aes128Gcm::new_from_slice(key)
+            .map_err(|_| crate::MmtlsError::Crypto("invalid key".into()))?;
         let nonce = Nonce::try_from(&nonce)
             .map_err(|_| crate::MmtlsError::Crypto("invalid nonce bytes".into()))?;
 
-        // AAD: 4B zeros + 4B seq(BE) + 1B record_type + 2B version + 2B (len+16)
+        // AAD: 4B zeros + 4B seq(BE) + 1B record_type + 2B version + 2B (len or len+16)
         let mut aad = [0u8; 13];
         aad[..4].copy_from_slice(&[0u8; 4]);
-        aad[4..8].copy_from_slice(&client_seq_num.to_be_bytes());
+        aad[4..8].copy_from_slice(&seq_num.to_be_bytes());
         aad[8] = self.record_type;
         aad[9..11].copy_from_slice(&self.version.to_be_bytes());
-        aad[11..13].copy_from_slice(&((self.data.len() as u16) + 16).to_be_bytes());
+        let len_field = if encrypt {
+            (self.data.len() as u16) + 16
+        } else {
+            self.data.len() as u16
+        };
+        aad[11..13].copy_from_slice(&len_field.to_be_bytes());
 
-        let ciphertext = cipher
-            .encrypt(
-                &nonce,
-                Payload {
-                    msg: &self.data,
-                    aad: &aad,
-                },
-            )
-            .map_err(|_| crate::MmtlsError::Crypto("encryption failed".into()))?;
+        let result = if encrypt {
+            cipher
+                .encrypt(
+                    &nonce,
+                    Payload {
+                        msg: &self.data,
+                        aad: &aad,
+                    },
+                )
+                .map_err(|_| crate::MmtlsError::Crypto("encryption failed".into()))?
+        } else {
+            cipher
+                .decrypt(
+                    &nonce,
+                    Payload {
+                        msg: &self.data,
+                        aad: &aad,
+                    },
+                )
+                .map_err(|_| crate::MmtlsError::Crypto("decryption failed".into()))?
+        };
 
-        self.data = ciphertext;
+        self.data = result;
         self.length = self.data.len() as u16;
         Ok(())
     }
 
+    pub fn encrypt(&mut self, keys: &TrafficKeyPair, client_seq_num: u32) -> Result<()> {
+        self.crypt(&keys.client_key, &keys.client_nonce, client_seq_num, true)
+    }
+
     pub fn decrypt(&mut self, keys: &TrafficKeyPair, server_seq_num: u32) -> Result<()> {
-        let mut nonce = keys.server_nonce.clone();
-        xor_nonce(&mut nonce, server_seq_num);
+        self.crypt(&keys.server_key, &keys.server_nonce, server_seq_num, false)
+    }
 
-        let cipher = Aes128Gcm::new_from_slice(&keys.server_key)
-            .map_err(|_| crate::MmtlsError::Crypto("invalid key for decrypt".into()))?;
-        let nonce = Nonce::try_from(&nonce)
-            .map_err(|_| crate::MmtlsError::Crypto("invalid nonce bytes".into()))?;
+    pub fn encrypt_as_server(&mut self, keys: &TrafficKeyPair, server_seq_num: u32) -> Result<()> {
+        self.crypt(&keys.server_key, &keys.server_nonce, server_seq_num, true)
+    }
 
-        // AAD: 4B zeros + 4B seq(BE) + 1B record_type + 2B version + 2B len
-        let mut aad = [0u8; 13];
-        aad[..4].copy_from_slice(&[0u8; 4]);
-        aad[4..8].copy_from_slice(&server_seq_num.to_be_bytes());
-        aad[8] = self.record_type;
-        aad[9..11].copy_from_slice(&self.version.to_be_bytes());
-        aad[11..13].copy_from_slice(&(self.data.len() as u16).to_be_bytes());
-
-        let plaintext = cipher
-            .decrypt(
-                &nonce,
-                Payload {
-                    msg: &self.data,
-                    aad: &aad,
-                },
-            )
-            .map_err(|_| crate::MmtlsError::Crypto("decryption failed".into()))?;
-
-        self.data = plaintext;
-        self.length = self.data.len() as u16;
-        Ok(())
+    pub fn decrypt_as_server(&mut self, keys: &TrafficKeyPair, client_seq_num: u32) -> Result<()> {
+        self.crypt(&keys.client_key, &keys.client_nonce, client_seq_num, false)
     }
 }
 
@@ -152,6 +153,24 @@ pub async fn read_record(r: &mut (impl AsyncRead + Unpin)) -> Result<MmtlsRecord
     let mut data = vec![0u8; length as usize];
     r.read_exact(&mut data).await?;
 
+    Ok(MmtlsRecord {
+        record_type,
+        version,
+        length,
+        data,
+    })
+}
+
+/// Synchronous version of read_record for parsing from in-memory buffers.
+pub fn read_sync(r: &mut std::io::Cursor<Vec<u8>>) -> Result<MmtlsRecord> {
+    use std::io::Read;
+    let mut header = [0u8; 5];
+    Read::read_exact(r, &mut header)?;
+    let record_type = header[0];
+    let version = u16::from_be_bytes([header[1], header[2]]);
+    let length = u16::from_be_bytes([header[3], header[4]]);
+    let mut data = vec![0u8; length as usize];
+    Read::read_exact(r, &mut data)?;
     Ok(MmtlsRecord {
         record_type,
         version,

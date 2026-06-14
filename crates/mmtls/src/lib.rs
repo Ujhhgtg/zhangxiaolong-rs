@@ -5,6 +5,7 @@ pub use mmtls::{MmtlsClient, new_mmtls_client};
 pub use mmtls_short::{MmtlsClientShort, new_mmtls_client_short};
 pub use parser::{clean_hex_string, format_records, parse_records, record_type_name};
 pub use record::*;
+pub use server::MmtlsServer;
 pub use session::Session;
 pub use types::*;
 
@@ -33,6 +34,7 @@ mod mmtls;
 mod mmtls_short;
 mod parser;
 mod record;
+mod server;
 mod server_finish;
 mod server_hello;
 mod session;
