@@ -51,6 +51,7 @@ impl MmtlsClient {
         self.reset();
 
         let (pub_key, verify) = generate_key_pairs()?;
+        eprintln!("CLIENT_PK: {}", hex::encode(pub_key.public_key().to_sec1_bytes()));
         self.public_ecdh = Some(pub_key);
         self.verify_ecdh = Some(verify);
 
