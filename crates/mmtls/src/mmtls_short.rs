@@ -244,7 +244,7 @@ impl MmtlsClientShort {
         self.server_seq_num = 0;
     }
 
-    fn pack_http(&self, host: &str, path: &str, req: &[u8]) -> Result<Vec<u8>> {
+    fn pack_http(&mut self, host: &str, path: &str, req: &[u8]) -> Result<Vec<u8>> {
         let mut tls_payload = Vec::new();
         let dat_part = gen_data_part(host, path, req)?;
 
@@ -255,11 +255,12 @@ impl MmtlsClientShort {
         let hello = new_psk_zero_hello(&session.tk.tickets[0]);
         let hello_part = hello.serialize();
 
-        let mut handshake_hasher = self.handshake_hasher.clone();
-        handshake_hasher.update(&hello_part);
-        let early_key = &self.early_data_key(&session.psk_access, &handshake_hasher)?;
+        self.handshake_hasher.update(&hello_part);
+        let early_key = &self.early_data_key(&session.psk_access, &self.handshake_hasher)?;
 
         tls_payload.extend_from_slice(&create_system_record(hello_part).serialize());
+
+        self.client_seq_num += 1; // seq 1: first encrypted record
 
         // Extensions
         let mut extensions_part = vec![
@@ -272,20 +273,24 @@ impl MmtlsClientShort {
         let pos = extensions_part.len() - 4;
         extensions_part[pos..pos + 4].copy_from_slice(&ts_bytes);
 
+        self.handshake_hasher.update(&extensions_part);
         let mut extensions_record = create_system_record(extensions_part);
-        extensions_record.encrypt(early_key, 0)?;
+        extensions_record.encrypt(early_key, self.client_seq_num)?;
         tls_payload.extend_from_slice(&extensions_record.serialize());
+        self.client_seq_num += 1;
 
         // Request
         let mut request_record = create_raw_data_record(dat_part);
-        request_record.encrypt(early_key, 1)?;
+        request_record.encrypt(early_key, self.client_seq_num)?;
         tls_payload.extend_from_slice(&request_record.serialize());
+        self.client_seq_num += 1;
 
         // Abort
         let abort_part = vec![0x00, 0x00, 0x00, 0x03, 0x00, 0x01, 0x01];
         let mut abort_record = create_abort_record(abort_part);
-        abort_record.encrypt(early_key, 2)?;
+        abort_record.encrypt(early_key, self.client_seq_num)?;
         tls_payload.extend_from_slice(&abort_record.serialize());
+        self.client_seq_num += 1;
 
         let header = build_request_header(host, tls_payload.len())?;
         Ok([header, tls_payload].concat())
@@ -368,18 +373,36 @@ async fn parse_response(conn: &mut TcpStream) -> Result<Vec<u8>> {
     loop {
         let n = conn.read(&mut chunk).await?;
         if n == 0 {
-            break;
+            return Err(MmtlsError::Parse("incomplete HTTP response".into()));
         }
         buf.extend_from_slice(&chunk[..n]);
         let mut headers = [httparse::EMPTY_HEADER; 32];
         let mut resp = httparse::Response::new(&mut headers);
         match resp.parse(&buf) {
-            Ok(httparse::Status::Complete(header_len)) => return Ok(buf[header_len..].to_vec()),
+            Ok(httparse::Status::Complete(header_len)) => {
+                let body_so_far = buf.len() - header_len;
+                let content_length = resp
+                    .headers
+                    .iter()
+                    .find(|h| h.name.eq_ignore_ascii_case("content-length"))
+                    .and_then(|h| std::str::from_utf8(h.value).ok())
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(body_so_far);
+                let mut remaining = content_length.saturating_sub(body_so_far);
+                while remaining > 0 {
+                    let n = conn.read(&mut chunk).await?;
+                    if n == 0 {
+                        return Err(MmtlsError::Parse("incomplete HTTP response body".into()));
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                    remaining = remaining.saturating_sub(n);
+                }
+                return Ok(buf[header_len..].to_vec());
+            }
             Ok(httparse::Status::Partial) => continue,
             Err(e) => return Err(MmtlsError::Parse(format!("http parse: {e}"))),
         }
     }
-    Err(MmtlsError::Parse("incomplete HTTP response".into()))
 }
 
 fn read_sync(r: &mut Cursor<Vec<u8>>) -> Result<MmtlsRecord> {
